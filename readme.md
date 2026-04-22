@@ -176,6 +176,31 @@ Tests are written with [Jest](https://jestjs.io/) and located in `__tests__/pack
 
 ---
 
+## Migrating from `2stools-daq`
+
+This package replaces the legacy `2stools-daq` package. The API is fully compatible — only the package name changed.
+
+**1. Uninstall the old package and install the new one:**
+
+```bash
+npm uninstall 2stools-daq
+npm install @tosolve/datacodec
+```
+
+**2. Update your imports:**
+
+```js
+// Before
+const { packetDecode } = require('2stools-daq');
+
+// After
+const { packetDecode } = require('@tosolve/datacodec');
+```
+
+No other changes are required.
+
+---
+
 ## License
 
 ISC © [2Solve Engenharia e Tecnologia](http://www.2solve.com/)
