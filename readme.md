@@ -1,7 +1,4 @@
-# 2STools DAQ
-
-[![npm version](https://img.shields.io/npm/v/2stools-daq.svg)](https://www.npmjs.com/package/2stools-daq)
-[![license](https://img.shields.io/npm/l/2stools-daq.svg)](./LICENSE)
+# 2Solve Datacodec
 
 A lightweight data decoding library designed to interpret and convert raw transmission payloads from 2Solve devices. It provides utilities to transform encoded data (such as hexadecimal payloads) into structured and readable formats like JSON, simplifying integration and data processing.
 
@@ -10,7 +7,7 @@ A lightweight data decoding library designed to interpret and convert raw transm
 ## Installation
 
 ```bash
-npm install 2stools-daq
+npm install 2solve-datacodec
 ```
 
 ---
@@ -18,7 +15,7 @@ npm install 2stools-daq
 ## Quick Start
 
 ```js
-const { packetDecode } = require('2stools-daq');
+const { packetDecode } = require('2solve-datacodec');
 
 const rawData = '000441da6666';
 const result = packetDecode(rawData);
@@ -43,7 +40,7 @@ Decodes a raw payload into a structured JSON object.
 **Returns:** An object where each key is a sensor name and its value is the decoded reading.
 
 ```js
-const { packetDecode } = require('2stools-daq');
+const { packetDecode } = require('2solve-datacodec');
 
 // Hex string
 packetDecode('000441da6666');
@@ -65,7 +62,7 @@ An object containing all supported sensor definitions. Each entry follows the st
 ```
 
 ```js
-const { mapping } = require('2stools-daq');
+const { mapping } = require('2solve-datacodec');
 
 console.log(mapping.temp);
 // [4, 4, null, 'float']
@@ -78,7 +75,7 @@ console.log(mapping.temp);
 An array of all supported sensor names.
 
 ```js
-const { mappingKeys } = require('2stools-daq');
+const { mappingKeys } = require('2solve-datacodec');
 
 console.log(mappingKeys);
 // ['temp', 'hum', 'GPS_Lat', 'GPS_Lng', ...]
@@ -139,7 +136,7 @@ The library includes 180+ predefined sensor mappings across the following catego
 ## Advanced Example
 
 ```js
-const { packetDecode } = require('2stools-daq');
+const { packetDecode } = require('2solve-datacodec');
 
 const rawData =
   '801E40E66666801F42366666802044454666802441BB3333' +
