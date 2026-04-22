@@ -180,6 +180,8 @@ exports.mapping = {
     DI7_ext_board_DI9: [178, 1, null, "uint"],
     DI7_ext_board_DI10: [179, 1, null, "uint"],
     Relay_stat_DO1: [180, 1, null, "uint"],
+    CH4_INIR_PPM: [181, 4, null, "uint32_t"],
+    CH4_INIR_TEMP: [182, 4, null, "float"],
     DI1_DM: [0x8000 + 1, 1, null, "uint"],
     DI2_DM: [0x8000 + 2, 1, null, "uint"],
     DI3_DM: [0x8000 + 3, 1, null, "uint"],
