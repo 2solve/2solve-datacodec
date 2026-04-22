@@ -1,5 +1,5 @@
 {
-  "name": "2solve-datacodec",
+  "name": "@tosolve/datacodec",
   "version": "0.18.0",
   "description": "Library with useful functions for our clients",
   "main": "index.js",

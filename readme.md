@@ -7,7 +7,7 @@ A lightweight data decoding library designed to interpret and convert raw transm
 ## Installation
 
 ```bash
-npm install 2solve-datacodec
+npm install @tosolve/datacodec
 ```
 
 ---
@@ -15,7 +15,7 @@ npm install 2solve-datacodec
 ## Quick Start
 
 ```js
-const { packetDecode } = require('2solve-datacodec');
+const { packetDecode } = require('@tosolve/datacodec');
 
 const rawData = '000441da6666';
 const result = packetDecode(rawData);
@@ -40,7 +40,7 @@ Decodes a raw payload into a structured JSON object.
 **Returns:** An object where each key is a sensor name and its value is the decoded reading.
 
 ```js
-const { packetDecode } = require('2solve-datacodec');
+const { packetDecode } = require('@tosolve/datacodec');
 
 // Hex string
 packetDecode('000441da6666');
@@ -62,7 +62,7 @@ An object containing all supported sensor definitions. Each entry follows the st
 ```
 
 ```js
-const { mapping } = require('2solve-datacodec');
+const { mapping } = require('@tosolve/datacodec');
 
 console.log(mapping.temp);
 // [4, 4, null, 'float']
@@ -75,7 +75,7 @@ console.log(mapping.temp);
 An array of all supported sensor names.
 
 ```js
-const { mappingKeys } = require('2solve-datacodec');
+const { mappingKeys } = require('@tosolve/datacodec');
 
 console.log(mappingKeys);
 // ['temp', 'hum', 'GPS_Lat', 'GPS_Lng', ...]
@@ -136,7 +136,7 @@ The library includes 180+ predefined sensor mappings across the following catego
 ## Advanced Example
 
 ```js
-const { packetDecode } = require('2solve-datacodec');
+const { packetDecode } = require('@tosolve/datacodec');
 
 const rawData =
   '801E40E66666801F42366666802044454666802441BB3333' +
