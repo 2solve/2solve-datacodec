@@ -1,6 +1,6 @@
 {
   "name": "@tosolve/datacodec",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "description": "Library with useful functions for our clients",
   "main": "index.js",
   "scripts": {
@@ -14,7 +14,7 @@
   "license": "ISC",
   "repository": {
     "type": "git",
-    "url": "https://github.com/2solve/2STools"
+    "url": "https://github.com/2solve/2solve-datacodec"
   },
   "dependencies": {
     "hex2dec": "^1.1.2",
