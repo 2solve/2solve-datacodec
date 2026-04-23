@@ -7,7 +7,7 @@ A lightweight data decoding library designed to interpret and convert raw transm
 ## Installation
 
 ```bash
-npm install 2solve-datacodec
+npm install @tosolve/datacodec
 ```
 
 ---
@@ -15,7 +15,7 @@ npm install 2solve-datacodec
 ## Quick Start
 
 ```js
-const { packetDecode } = require('2solve-datacodec');
+const { packetDecode } = require('@tosolve/datacodec');
 
 const rawData = '000441da6666';
 const result = packetDecode(rawData);
@@ -40,7 +40,7 @@ Decodes a raw payload into a structured JSON object.
 **Returns:** An object where each key is a sensor name and its value is the decoded reading.
 
 ```js
-const { packetDecode } = require('2solve-datacodec');
+const { packetDecode } = require('@tosolve/datacodec');
 
 // Hex string
 packetDecode('000441da6666');
@@ -62,7 +62,7 @@ An object containing all supported sensor definitions. Each entry follows the st
 ```
 
 ```js
-const { mapping } = require('2solve-datacodec');
+const { mapping } = require('@tosolve/datacodec');
 
 console.log(mapping.temp);
 // [4, 4, null, 'float']
@@ -75,7 +75,7 @@ console.log(mapping.temp);
 An array of all supported sensor names.
 
 ```js
-const { mappingKeys } = require('2solve-datacodec');
+const { mappingKeys } = require('@tosolve/datacodec');
 
 console.log(mappingKeys);
 // ['temp', 'hum', 'GPS_Lat', 'GPS_Lng', ...]
@@ -136,7 +136,7 @@ The library includes 180+ predefined sensor mappings across the following catego
 ## Advanced Example
 
 ```js
-const { packetDecode } = require('2solve-datacodec');
+const { packetDecode } = require('@tosolve/datacodec');
 
 const rawData =
   '801E40E66666801F42366666802044454666802441BB3333' +
@@ -173,6 +173,31 @@ npm test
 ```
 
 Tests are written with [Jest](https://jestjs.io/) and located in `__tests__/packetDecode.spec.js`.
+
+---
+
+## Migrating from `2stools-daq`
+
+This package replaces the legacy `2stools-daq` package. The API is fully compatible — only the package name changed.
+
+**1. Uninstall the old package and install the new one:**
+
+```bash
+npm uninstall 2stools-daq
+npm install @tosolve/datacodec
+```
+
+**2. Update your imports:**
+
+```js
+// Before
+const { packetDecode } = require('2stools-daq');
+
+// After
+const { packetDecode } = require('@tosolve/datacodec');
+```
+
+No other changes are required.
 
 ---
 
