@@ -124,7 +124,8 @@ The library includes 180+ predefined sensor mappings across the following catego
 | Analog Inputs     | `AI1`–`AI5`, `EAI1`–`EAI5` (float variants)      |
 | GPS               | `GPS_Lat`, `GPS_Lng`, altitude, speed, satellites |
 | Pressure          | `DPS1`–`DPS4`, water pressure                     |
-| Water Quality     | pH, turbidity, conductivity (+ standard deviation)|
+| Water Quality     | pH, turbidity, conductivity, suspended solids (+ standard deviation)|
+| Smart Water       | `channel_level`, `pump_press`, `rain_accumulated_mm`, calibration timestamps |
 | RFID              | `RC522_UID`, `PN532_UID`, `PN532_NAME`            |
 | Digital I/O       | `DI1`–`DI10`, `DO1`–`DO14`                       |
 | Vibration         | Peak frequency, RMS and peak acceleration X/Y/Z   |
@@ -172,7 +173,7 @@ packetDecode('aabbcc', 100);  // Error: offset out of bounds
 npm test
 ```
 
-Tests are written with [Jest](https://jestjs.io/) and located in `__tests__/packetDecode.spec.js`.
+Tests are written with [Jest](https://jestjs.io/) and located in `__tests__/` (`packetDecode.spec.js`, `smartWaterTags.spec.js`).
 
 ---
 

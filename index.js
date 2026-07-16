@@ -10,7 +10,7 @@ function isJson(str) {
     }
 }
 
-// Sensors list 
+// Sensors list
 exports.mapping = {
     ToSenseID: [0, 2, null, "uint"],
     counter: [1, 2, null, "uint"],
@@ -262,7 +262,12 @@ exports.mapping = {
     ph_cal_timestamp: [0x8000 + 78, 8, null, "uint"],
     turbidity_cal_timestamp: [0x8000 + 79, 8, null, "uint"],
     conductivity_cal_timestamp: [0x8000 + 80, 8, null, "uint"],
-    rain_sensor: [0x8000 + 81, 2, null, "uint"]
+    rain_sensor: [0x8000 + 81, 2, null, "uint"],
+    drainage_Suspended: [0x8000 + 82, 4, null, "float"],
+    drainage_Suspended_SD: [0x8000 + 83, 4, null, "float"],
+    water_Suspended: [0x8000 + 84, 4, null, "float"],
+    water_Suspended_SD: [0x8000 + 85, 4, null, "float"],
+    rain_accumulated_mm: [0x8000 + 86, 4, null, "float"]
 };
 
 exports.mappingKeys = Object.getOwnPropertyNames(this.mapping);
