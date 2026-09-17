@@ -130,7 +130,8 @@ The library includes 180+ predefined sensor mappings across the following catego
 | Digital I/O       | `DI1`–`DI10`, `DO1`–`DO14`                       |
 | Vibration         | Peak frequency, RMS and peak acceleration X/Y/Z   |
 | Modbus Registers  | 16-bit and 32-bit, signed/unsigned/float          |
-| Pulse / Relay     | Pulse inputs, relay and drain manager states      |
+| Pulse / Relay     | Pulse inputs, per-channel frequency and count (`FreInp0`–`FreInp3`, `IntInp0`–`IntInp3`), relay and drain manager states |
+| Engineering Units | `EngInp0`–`EngInp3` — device-scaled value per digital input (e.g. flow) |
 
 ---
 
