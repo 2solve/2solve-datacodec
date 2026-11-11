@@ -168,13 +168,38 @@ packetDecode('aabbcc', 100);  // Error: offset out of bounds
 
 ---
 
+## NanoDAq Batch Frame (fPort 3)
+
+Since v0.21.0, `packetDecode` also decodes the NanoDAq batch frame (MF-150): several readings sent in one uplink when the reading period is shorter than the send period. It is only taken for a **JSON input with `fPort === 3`** (`fport` / `f_port` are also accepted) whose payload starts with `01 00` or `01 01`. Any other frame, and every plain hex string, follows the usual path unchanged.
+
+Frame (big-endian): `[0x01][interval s, 3 B][age of the newest record s, 2 B][U][U x (ID 2 B + value)][K][K x ID 2 B]`, then N records of K values, oldest to newest. Inside the records, IDs 15, 16, 39-42 and 61 go as int16 x 0.1 (`0x8000` = failure); the others keep their size and type from `mapping`. A NaN float is a failure.
+
+The result keeps the input object and adds:
+
+- `json2sense`: the single values (e.g. `BatteryMon`) plus the **newest** record, under the usual keys and formats. A failed value is **left out**, so a consumer that stores one value per key keeps the last good one.
+- `batch2sense`: every record, for consumers that store each reading with its own time:
+
+```js
+{
+  interval_s: 20,
+  age_s: 2,
+  readings: [
+    { offset_s: -22, AI1_f: '16.0513', AI2_f: '0.0000' },  // offset from the uplink time
+    { offset_s: -2,  AI1_f: '16.0569', AI2_f: '0.0000' }   // failed value = null
+  ],
+  errors: []  // truncated/unknown content: decoding stops there, nothing is thrown
+}
+```
+
+---
+
 ## Running Tests
 
 ```bash
 npm test
 ```
 
-Tests are written with [Jest](https://jestjs.io/) and located in `__tests__/` (`packetDecode.spec.js`, `smartWaterTags.spec.js`).
+Tests are written with [Jest](https://jestjs.io/) and located in `__tests__/` (`packetDecode.spec.js`, `smartWaterTags.spec.js`, `nddiTags.spec.js`, `batchFrame.spec.js`).
 
 ---
 
