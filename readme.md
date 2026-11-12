@@ -120,7 +120,7 @@ The library includes 180+ predefined sensor mappings across the following catego
 | Category          | Examples                                          |
 |-------------------|---------------------------------------------------|
 | Temperature       | `temp`, `hum`, thermocouple channels              |
-| Battery           | `BatteryMon`, `BatteryMon_IC`                     |
+| Battery           | `BatteryMon`, `BatteryMon_IC`, `BatteryLevel` (estimated charge left, %; 255 = unknown), `BatteryTxDropMv` (voltage drop on the last TX, mV; 65535 = no measure) |
 | Analog Inputs     | `AI1`–`AI5`, `EAI1`–`EAI5` (float variants)      |
 | GPS               | `GPS_Lat`, `GPS_Lng`, altitude, speed, satellites |
 | Pressure          | `DPS1`–`DPS4`, water pressure                     |
