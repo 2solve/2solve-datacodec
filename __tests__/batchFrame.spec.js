@@ -327,13 +327,20 @@ function outcome(fn) {
   }
 }
 
-// Identical to v0.20.0, except where v0.20.0 crashed with a TypeError on an unknown ID:
-// since v0.23.0 (MF-215) that frame no longer throws and reports the ID in errors2sense.
+// Identical to v0.20.0, except where the frame has a problem that v0.20.0 did not see:
+// an unknown ID crashed it with a TypeError (fixed in v0.23.0, MF-215), and a cut field or
+// an ID outside the table gave invented values (fixed in v0.24.0, MF-29). There the new
+// version must not throw, must report it in errors2sense and, where v0.20.0 returned
+// something, may only keep values that v0.20.0 also gave, unchanged.
 function expectLegacyOrFixed(now, old) {
-  if (old.threw === "TypeError") {
+  if (now.value && now.value.errors2sense) {
     expect(now.threw).toBeUndefined();
-    expect(now.value.errors2sense).toHaveLength(1);
-    expect(now.value.errors2sense[0]).toMatch(/^unknown ID \d+ @byte \d+$/);
+    expect(now.value.errors2sense[0]).toMatch(/^(unknown ID \d+|truncated (ID|field \w+ \(ID \d+\))) @byte \d+/);
+    if (old.value) {
+      for (const [key, value] of Object.entries(now.value.json2sense)) {
+        expect(old.value.json2sense[key]).toEqual(value);
+      }
+    }
   } else {
     expect(now).toEqual(old);
   }
