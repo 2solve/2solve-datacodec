@@ -327,6 +327,18 @@ function outcome(fn) {
   }
 }
 
+// Identical to v0.20.0, except where v0.20.0 crashed with a TypeError on an unknown ID:
+// since v0.23.0 (MF-215) that frame no longer throws and reports the ID in errors2sense.
+function expectLegacyOrFixed(now, old) {
+  if (old.threw === "TypeError") {
+    expect(now.threw).toBeUndefined();
+    expect(now.value.errors2sense).toHaveLength(1);
+    expect(now.value.errors2sense[0]).toMatch(/^unknown ID \d+ @byte \d+$/);
+  } else {
+    expect(now).toEqual(old);
+  }
+}
+
 (legacy ? describe : describe.skip)("regression - non-batch frames identical to v0.20.0", () => {
   const plain = [
     "0003406a9101000a00000000000b00000000", // legacy NDAI frame
@@ -343,7 +355,8 @@ function outcome(fn) {
     "00a30100a400",
     "0027" + "4120",
   ];
-  // Batch bytes outside fPort 3 keep the old behaviour (TypeError on ID 256/257).
+  // Batch bytes outside fPort 3 keep the old path: ID 256/257 is unknown there (TypeError
+  // up to v0.22.0, errors2sense since v0.23.0).
   const batchBytes = [
     "01000014000201000340701b8f02000a000b4180690d000000004180749700000000",
     "010000140000010003406a910102000a000b7fc0000000000000",
@@ -351,13 +364,13 @@ function outcome(fn) {
 
   for (const hex of plain.concat(batchBytes)) {
     it(`plain hex string ${hex}`, () => {
-      expect(outcome(() => packetDecode(hex))).toEqual(outcome(() => legacy.packetDecode(hex)));
+      expectLegacyOrFixed(outcome(() => packetDecode(hex)), outcome(() => legacy.packetDecode(hex)));
     });
 
     for (const fPort of [1, 2, 10, undefined]) {
       it(`ChirpStack JSON fPort ${fPort} ${hex}`, () => {
         const msg = chirpstack(hex, fPort, { time: "2026-11-11T12:00:00Z", rxInfo: [{ rssi: -80 }] });
-        expect(outcome(() => packetDecode(msg))).toEqual(outcome(() => legacy.packetDecode(msg)));
+        expectLegacyOrFixed(outcome(() => packetDecode(msg)), outcome(() => legacy.packetDecode(msg)));
       });
     }
   }
@@ -365,18 +378,20 @@ function outcome(fn) {
   for (const hex of plain) {
     it(`ChirpStack JSON fPort 3, not a batch header: ${hex}`, () => {
       const msg = chirpstack(hex, 3);
-      expect(outcome(() => packetDecode(msg))).toEqual(outcome(() => legacy.packetDecode(msg)));
+      expectLegacyOrFixed(outcome(() => packetDecode(msg)), outcome(() => legacy.packetDecode(msg)));
     });
   }
 
-  it("batch bytes on fPort 2 still throw a TypeError, as in v0.20.0", () => {
+  it("batch bytes on fPort 2 take the old path: unknown ID 256 reported, no exception (MF-215)", () => {
     const msg = chirpstack(batchBytes[0], 2);
-    expect(outcome(() => packetDecode(msg))).toEqual({ threw: "TypeError" });
+    const out = packetDecode(msg);
+    expect(out.json2sense).toEqual({});
+    expect(out.errors2sense).toEqual(["unknown ID 256 @byte 0"]);
   });
 
   it("fPort 3 with a non-zero offset takes the old path", () => {
     const msg = chirpstack(batchBytes[0], 3);
-    expect(outcome(() => packetDecode(msg, 4))).toEqual(outcome(() => legacy.packetDecode(msg, 4)));
+    expectLegacyOrFixed(outcome(() => packetDecode(msg, 4)), outcome(() => legacy.packetDecode(msg, 4)));
   });
 
   it("other JSON wrappers (payload, uplink_message, params) identical", () => {
@@ -389,7 +404,7 @@ function outcome(fn) {
       { json2sense: { temp: "1" } },
     ]) {
       const s = JSON.stringify(obj);
-      expect(outcome(() => packetDecode(s))).toEqual(outcome(() => legacy.packetDecode(s)));
+      expectLegacyOrFixed(outcome(() => packetDecode(s)), outcome(() => legacy.packetDecode(s)));
     }
   });
 });

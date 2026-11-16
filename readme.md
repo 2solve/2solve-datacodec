@@ -1,6 +1,18 @@
-# 2Solve Datacodec
+# 2Solve Decoder Library
 
-A lightweight data decoding library designed to interpret and convert raw transmission payloads from 2Solve devices. It provides utilities to transform encoded data (such as hexadecimal payloads) into structured and readable formats like JSON, simplifying integration and data processing.
+Decodes the uplink payloads of 2Solve devices (NanoDAq, FlexDAQ, Smart Water and other 2Sense devices) into named values.
+It **only decodes**: there is no encoder, and the device firmware builds the frames.
+
+The payload is a TLV stream with no header, length or CRC: `[ID, 2 bytes big-endian][value, N bytes]`, repeated until
+the end. The frame does **not** carry N. The size and type of each value come from the tag table in this library
+(`mapping`), which is why the device firmware and this table must agree ID by ID.
+
+| | |
+|---|---|
+| Repository | [`2solve/software_2solve_decoder_lib`](https://github.com/2solve/software_2solve_decoder_lib) (renamed from `2solve-datacodec` on 2026-11-16; the old URL redirects) |
+| npm package | **`@tosolve/datacodec`**: the package name did not change yet |
+| Node-RED wrapper | [`2solve/software_node-red_decoder_lib`](https://github.com/2solve/software_node-red_decoder_lib) (npm `@tosolve/node-red-datacodec`, node type `2stools-datacodec`) |
+| Used by | the LoRaWAN gateway platform (`mqttGateway.js`) and its Node-RED, the industrial gateway (FlexDAQ) |
 
 ---
 
@@ -17,11 +29,8 @@ npm install @tosolve/datacodec
 ```js
 const { packetDecode } = require('@tosolve/datacodec');
 
-const rawData = '000441da6666';
-const result = packetDecode(rawData);
-
-console.log(result);
-// { temp: '27.3000' }
+packetDecode('000441da6666');
+// { json2sense: { temp: '27.3000' } }
 ```
 
 ---
@@ -30,153 +39,147 @@ console.log(result);
 
 ### `packetDecode(rawdata, offset?)`
 
-Decodes a raw payload into a structured JSON object.
+| Parameter | Type             | Default | Description |
+|-----------|------------------|---------|-------------|
+| `rawdata` | String or Buffer | —       | A hexadecimal string, or a JSON message from the network server (see [Input formats](#input-formats)) |
+| `offset`  | Number           | `0`     | Where to start reading, in **hex characters** (2 per byte). Only for plain frames |
 
-| Parameter | Type   | Default | Description                                        |
-|-----------|--------|---------|----------------------------------------------------|
-| `rawdata` | String | —       | Hexadecimal string or Base64-encoded JSON payload  |
-| `offset`  | Number | `0`     | Byte offset to start reading from                  |
+**Returns** an object with:
 
-**Returns:** An object where each key is a sensor name and its value is the decoded reading.
+- `json2sense`: one key per decoded tag, `{ tagName: value }`. Values are **strings**: floats with 4 decimals
+  (`'27.3000'`), integers as decimal text (`'75'`), `uintHex` as hex text.
+- for a JSON input, every field of the input message, unchanged (`fPort`, `deviceInfo`, `time`…), next to `json2sense`.
+- `errors2sense` (since v0.23.0): only when the frame has an unknown ID. See [Errors](#errors).
+- `batch2sense`: only for the NanoDAq batch frame. See [Batch frame](#nanodaq-batch-frame-fport-3).
 
 ```js
-const { packetDecode } = require('@tosolve/datacodec');
-
 // Hex string
-packetDecode('000441da6666');
-// { temp: '27.3000' }
+packetDecode('0033c1a237ac');
+// { json2sense: { GPS_Lat: '-20.2772' } }
 
-// With offset
-packetDecode('0033c1a237ac', 0);
-// { GPS_Lat: '-20.2772' }
+// ChirpStack v4 message: the input fields stay, json2sense is added
+packetDecode(JSON.stringify({ fPort: 2, data: 'AARB2mZm' }));
+// { fPort: 2, data: 'AARB2mZm', json2sense: { temp: '27.3000' } }
 ```
 
----
+A JSON input that **already has** `json2sense` is returned as it is, without decoding again.
 
 ### `mapping`
 
-An object containing all supported sensor definitions. Each entry follows the structure:
-
-```
-{ sensorName: [id, byteLength, value, dataType] }
-```
+The tag table: `{ tagName: [id, byteLength, value, dataType] }`.
 
 ```js
 const { mapping } = require('@tosolve/datacodec');
-
-console.log(mapping.temp);
-// [4, 4, null, 'float']
+mapping.temp; // [4, 4, null, 'float']   (id 4, 4 bytes, float)
 ```
 
----
+The third slot (`value`) is overwritten with the last value decoded by `packetDecode`. It is shared by every call, so
+do not read decoded values from it: use the returned `json2sense`.
 
 ### `mappingKeys`
 
-An array of all supported sensor names.
+The tag names, in table order (274 tags in v0.23.0).
 
 ```js
 const { mappingKeys } = require('@tosolve/datacodec');
-
-console.log(mappingKeys);
-// ['temp', 'hum', 'GPS_Lat', 'GPS_Lng', ...]
+mappingKeys.slice(0, 4); // ['ToSenseID', 'counter', 'epoch', 'BatteryMon']
 ```
 
 ---
 
-## Supported Input Formats
+## Input formats
 
-`packetDecode` accepts the following input formats:
-
-- Raw hexadecimal string — `"000441da6666"`
-- Base64-encoded JSON with one of the following payload fields:
+- A hexadecimal string: `'000441da6666'`.
+- A JSON message (string or Buffer) whose payload is **Base64**, in one of these fields:
 
 ```json
+{ "data": "..." }                                    // ChirpStack v4
 { "payload": "..." }
-{ "uplink_message": { "frm_payload": "..." } }
+{ "uplink_message": { "frm_payload": "..." } }       // The Things Stack
 { "data": { "uplink_message": { "frm_payload": "..." } } }
 { "params": { "payload": "..." } }
 ```
 
-This makes the library compatible with common LoRaWAN network server formats out of the box.
+---
+
+## Data types
+
+| Type       | Decoded as |
+|------------|------------|
+| `uint`     | unsigned integer, big-endian, any size (`uint32_t` is the same) |
+| `int16`    | 16-bit signed integer |
+| `int32`    | 32-bit signed integer |
+| `float`    | IEEE 754 single precision, 4 decimals |
+| `uintHex`  | raw bytes as hex text (UIDs, names) |
 
 ---
 
-## Supported Data Types
+## Tags
 
-| Type      | Description                        |
-|-----------|------------------------------------|
-| `uint`    | Unsigned integer                   |
-| `int16`   | 16-bit signed integer              |
-| `int32`   | 32-bit signed integer              |
-| `float`   | IEEE 754 single-precision float    |
-| `uintHex` | Unsigned integer as hex string     |
-
----
-
-## Supported Sensors
-
-The library includes 180+ predefined sensor mappings across the following categories:
-
-| Category          | Examples                                          |
-|-------------------|---------------------------------------------------|
-| Temperature       | `temp`, `hum`, thermocouple channels              |
+| Group             | Tags (examples) |
+|-------------------|-----------------|
+| Temperature / humidity | `temp`, `HTU21DTemp`, `HTU21DHum`, `Exttemp1`–`Exttemp4` (DS18B20, thermocouple, PT100), `MPM_temp`, `MLX_OBJTemp` |
 | Battery           | `BatteryMon`, `BatteryMon_IC`, `BatteryLevel` (estimated charge left, %; 255 = unknown), `BatteryTxDropMv` (voltage drop on the last TX, mV; 65535 = no measure) |
-| Analog Inputs     | `AI1`–`AI5`, `EAI1`–`EAI5` (float variants)      |
+| Analog inputs     | `AI1`, `AI2`, `EAI1`–`EAI5` and their `_f` (float) variants; `AI1_f`/`AI2_f` are the NanoDAq NDAI current and voltage |
 | GPS               | `GPS_Lat`, `GPS_Lng`, altitude, speed, satellites |
-| Pressure          | `DPS1`–`DPS4`, water pressure                     |
-| Water Quality     | pH, turbidity, conductivity, suspended solids (+ standard deviation)|
+| Pressure          | `DPS1_I2C_Press`–`DPS4_I2C_Press` (+ `_Temp`), `MPM_press`, `water_Press` |
+| Water quality     | pH, turbidity, conductivity, suspended solids (+ standard deviation) |
 | Smart Water       | `channel_level`, `pump_press`, `rain_accumulated_mm`, calibration timestamps |
-| RFID              | `RC522_UID`, `PN532_UID`, `PN532_NAME`            |
-| Digital I/O       | `DI1`–`DI10`, `DO1`–`DO14`                       |
-| Vibration         | Peak frequency, RMS and peak acceleration X/Y/Z   |
-| Modbus Registers  | 16-bit and 32-bit, signed/unsigned/float          |
-| Pulse / Relay     | Pulse inputs, per-channel frequency and count (`FreInp0`–`FreInp3`, `IntInp0`–`IntInp3`), relay and drain manager states |
-| Engineering Units | `EngInp0`–`EngInp3` — device-scaled value per digital input (e.g. flow) |
+| RFID              | `RC522_UID`, `PN532_UID`, `PN532_NAME` |
+| Digital I/O       | `IO_ext_board_DI1`–`DI4`, `IO_ext_board_DO1`–`DO3`, `DI7_ext_board_DI4`–`DI10`, `Relay_stat_DO1`, drain manager `DI1_DM`–`DI8_DM`, `DO1_DM`–`DO14_DM` |
+| Pulse / frequency | `FreInp0`–`FreInp3` (Hz), `IntInp0`–`IntInp3` (count), relay and drain manager states |
+| NanoDAq NDDI      | `IO_ext_board_DI1_Changes`–`DI4_Changes` (state changes since the last uplink), `IO_ext_board_DI1_Overflow`–`DI4_Overflow` (pulse total high part: total = overflow × 2^32 + count; only sent after a wrap) |
+| Engineering units | `EngInp0`–`EngInp3`: value already scaled by the device (e.g. flow); the unit is not in the frame |
+| Vibration         | peak frequency, peak acceleration and RMS, X/Y/Z |
+| Modbus            | 16- and 32-bit registers, signed, unsigned and float |
+
+The full list is `mappingKeys`. A new tag is **added**, never changed: an ID, size or type that changes would break
+every device already in the field.
 
 ---
 
-## Advanced Example
+## Errors
+
+These inputs **throw a string** (not an `Error` object):
 
 ```js
-const { packetDecode } = require('@tosolve/datacodec');
-
-const rawData =
-  '801E40E66666801F42366666802044454666802441BB3333' +
-  '80253F40000080263F800000802741200000';
-
-const result = packetDecode(rawData);
-
-// Optionally convert string values to numbers
-for (const key in result) {
-  result[key] = Number(result[key]);
-}
-
-console.log(result);
+packetDecode('xyz');                      // "Data format must be a hexadecimal string"
+packetDecode('aabbcc', 1.5);              // "Offset format must be a positive integer number"
+packetDecode('aabbcc', -1);               // "Wrong offset value"
+packetDecode('aabbcc', 100);              // "Wrong offset value"
+packetDecode(JSON.stringify({ foo: 1 })); // "Can not find rawdata into received JSON"
 ```
 
----
-
-## Error Handling
-
-`packetDecode` throws descriptive errors for invalid inputs:
+An **unknown ID** inside a valid frame does not throw (since v0.23.0). Its size is unknown, so nothing after it can be
+read: decoding stops there, the values decoded so far are returned and `errors2sense` is added, only in this case:
 
 ```js
-packetDecode('xyz');          // Error: invalid hex format
-packetDecode('aabbcc', -1);   // Error: offset must be a non-negative integer
-packetDecode('aabbcc', 100);  // Error: offset out of bounds
+packetDecode('00034066666600fa0001');
+// { json2sense: { BatteryMon: '3.6000' }, errors2sense: ['unknown ID 250 @byte 6'] }
 ```
+
+Up to v0.22.0 the same frame threw a `TypeError` and the whole uplink was lost.
+
+Known limitation, kept for compatibility: an ID at or above the number of tags (274) and below `0x8000` is not looked
+up; the decoder moves one hex character forward and tries again.
 
 ---
 
-## NanoDAq Batch Frame (fPort 3)
+## NanoDAq batch frame (fPort 3)
 
-Since v0.21.0, `packetDecode` also decodes the NanoDAq batch frame (MF-150): several readings sent in one uplink when the reading period is shorter than the send period. It is only taken for a **JSON input with `fPort === 3`** (`fport` / `f_port` are also accepted) whose payload starts with `01 00` or `01 01`. Any other frame, and every plain hex string, follows the usual path unchanged.
+Since v0.21.0, `packetDecode` also decodes the NanoDAq batch frame (MF-150): several readings sent in one uplink when
+the reading period is shorter than the send period. It is only taken for a **JSON input with `fPort === 3`**
+(`fport` / `f_port` are also accepted) whose payload starts with `01 00` or `01 01`. Any other frame, and every plain
+hex string, follows the usual path unchanged.
 
-Frame (big-endian): `[0x01][interval s, 3 B][age of the newest record s, 2 B][U][U x (ID 2 B + value)][K][K x ID 2 B]`, then N records of K values, oldest to newest. Inside the records, IDs 15, 16, 39-42 and 61 go as int16 x 0.1 (`0x8000` = failure); the others keep their size and type from `mapping`. A NaN float is a failure.
+Frame (big-endian): `[0x01][interval s, 3 B][age of the newest record s, 2 B][U][U x (ID 2 B + value)][K][K x ID 2 B]`,
+then N records of K values, oldest to newest. Inside the records, IDs 15, 16, 39-42 and 61 go as int16 x 0.1
+(`0x8000` = failure); the others keep their size and type from `mapping`. A NaN float is a failure.
 
 The result keeps the input object and adds:
 
-- `json2sense`: the single values (e.g. `BatteryMon`) plus the **newest** record, under the usual keys and formats. A failed value is **left out**, so a consumer that stores one value per key keeps the last good one.
+- `json2sense`: the single values (e.g. `BatteryMon`) plus the **newest** record, under the usual keys and formats.
+  A failed value is **left out**, so a consumer that stores one value per key keeps the last good one.
 - `batch2sense`: every record, for consumers that store each reading with its own time:
 
 ```js
@@ -193,38 +196,32 @@ The result keeps the input object and adds:
 
 ---
 
-## Running Tests
+## Running tests
 
 ```bash
 npm test
 ```
 
-Tests are written with [Jest](https://jestjs.io/) and located in `__tests__/` (`packetDecode.spec.js`, `smartWaterTags.spec.js`, `nddiTags.spec.js`, `batchFrame.spec.js`).
+Tests use [Jest](https://jestjs.io/) and live in `__tests__/`: `packetDecode.spec.js`, `smartWaterTags.spec.js`,
+`nddiTags.spec.js`, `batchFrame.spec.js`, `batteryLevelTags.spec.js` and `nddiChangesOverflowTags.spec.js`.
+`batchFrame.spec.js` compares every non-batch frame with v0.20.0 (taken from git history).
+
+Known: 7 tests in `packetDecode.spec.js` fail since before v0.20.0: 5 expect the error texts to be thrown as `Error` objects and 2 expect a result without the `json2sense` wrapper.
 
 ---
 
 ## Migrating from `2stools-daq`
 
-This package replaces the legacy `2stools-daq` package. The API is fully compatible — only the package name changed.
-
-**1. Uninstall the old package and install the new one:**
+This package replaced the legacy `2stools-daq`. Same API, only the package name changed:
 
 ```bash
 npm uninstall 2stools-daq
 npm install @tosolve/datacodec
 ```
 
-**2. Update your imports:**
-
 ```js
-// Before
-const { packetDecode } = require('2stools-daq');
-
-// After
-const { packetDecode } = require('@tosolve/datacodec');
+const { packetDecode } = require('@tosolve/datacodec'); // was require('2stools-daq')
 ```
-
-No other changes are required.
 
 ---
 
