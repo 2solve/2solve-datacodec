@@ -190,6 +190,8 @@ exports.mapping = {
     FreInp3: [188, 2, null, "uint"],
     IntInp2: [189, 4, null, "uint"],
     IntInp3: [190, 4, null, "uint"],
+    BatteryLevel: [191, 1, null, "uint"],
+    BatteryTxDropMv: [192, 2, null, "uint"],
     DI1_DM: [0x8000 + 1, 1, null, "uint"],
     DI2_DM: [0x8000 + 2, 1, null, "uint"],
     DI3_DM: [0x8000 + 3, 1, null, "uint"],
@@ -280,6 +282,165 @@ exports.mapping = {
 
 exports.mappingKeys = Object.getOwnPropertyNames(this.mapping);
 
+// ─── NanoDAq batch frame (MF-150) ─────────────────────────────────────────────
+// Sent by the NanoDAq firmware on fPort 3 when the reading period is shorter than
+// the send period (batch_buildFrame in src/lora/batch.h of firmware-NanoDAq).
+// Big-endian:
+//   [0x01 version][interval s, 3 B][age of newest record s, 2 B]
+//   [U][U x (ID 2 B + native value)][K][K x ID 2 B]
+//   then N records of K values, oldest -> newest.
+// Inside a record, BATCH_COMPACT_IDS go as int16 x 0.1 (0x8000 = failure); the other
+// IDs keep the native size/type of `mapping`. A NaN float is a failure.
+// Read as a plain frame, the first two bytes (0x0100 / 0x0101) would be IDs 256/257,
+// which do not exist, so only fPort 3 + "01 00"/"01 01" takes this path.
+const BATCH_COMPACT_IDS = [15, 16, 39, 40, 41, 42, 61];
+
+function batchFPort(obj) {
+    if (obj.fPort !== undefined) return obj.fPort;
+    if (obj.fport !== undefined) return obj.fport;
+    return obj.f_port;
+}
+
+function isBatchFrame(obj, b) {
+    return batchFPort(obj) === 3 && b.length >= 2 && b[0] === 0x01 && (b[1] === 0x00 || b[1] === 0x01);
+}
+
+function batchReadUint(b, i, n) {
+    let v = 0;
+    for (let k = 0; k < n; k++) v = v * 256 + b[i + k];
+    return v;
+}
+
+function batchSize(key) {
+    return exports.mapping[key][1];
+}
+
+function batchKey(id) {
+    return exports.mappingKeys.find((key) => id === exports.mapping[key][0]);
+}
+
+// Native value, formatted like the legacy loop of packetDecode (float -> toFixed(4)
+// string, uint -> hexToDec string...). null = failure (NaN float) or unsupported type.
+function batchNative(b, i, key) {
+    const size = exports.mapping[key][1];
+    const hex = b.slice(i, i + size).toString("hex");
+
+    switch (exports.mapping[key][3]) {
+        case "float":
+            const value = readFloatBE([b[i], b[i + 1], b[i + 2], b[i + 3]]);
+            return isNaN(value) ? null : value.toFixed(4);
+        case "uint":
+            return hexToDec(hex);
+        case "uintHex":
+            return hex;
+        case "int16":
+            return (hexToDec(hex) << 16) >> 16;
+        case "int32":
+            return (hexToDec(hex) << 32) >> 32;
+        default:
+            return null;
+    }
+}
+
+// Never throws: a truncated or unknown frame returns what was decoded so far, with
+// the reason in batch2sense.errors.
+// json2sense = the "unique" values + the newest record, under the usual keys, so the
+// platform keeps storing one value per key. A failed value is left OUT of json2sense
+// (the platform keeps the last good value instead of storing "NaN"); in
+// batch2sense.readings it is null. batch2sense keeps every record with its offset
+// from the uplink time (offset_s <= 0), for a consumer that stores each reading.
+function decodeBatchFrame(obj, b) {
+    const json2sense = {};
+    const batch2sense = { interval_s: null, age_s: null, readings: [], errors: [] };
+    const done = () => {
+        const newest = batch2sense.readings[batch2sense.readings.length - 1];
+        for (const key in newest) {
+            if (key !== "offset_s" && newest[key] !== null) json2sense[key] = newest[key];
+        }
+        return { ...obj, json2sense, batch2sense };
+    };
+    const errors = batch2sense.errors;
+
+    if (b.length < 7) {
+        errors.push("batch truncated in header (" + b.length + " byte(s))");
+        return done();
+    }
+    const interval = batchReadUint(b, 1, 3);
+    const age = batchReadUint(b, 4, 2);
+    batch2sense.interval_s = interval;
+    batch2sense.age_s = age;
+
+    const nUnique = b[6];
+    let i = 7;
+    for (let k = 0; k < nUnique; k++) {
+        if (i + 2 > b.length) {
+            errors.push("batch truncated in unique values @byte " + i);
+            return done();
+        }
+        const id = (b[i] << 8) | b[i + 1];
+        const key = batchKey(id);
+        if (!key) {
+            errors.push("unknown ID " + id + " in unique values @byte " + i);
+            return done();
+        }
+        const size = batchSize(key);
+        if (i + 2 + size > b.length) {
+            errors.push("batch truncated in " + key + " @byte " + i);
+            return done();
+        }
+        const value = batchNative(b, i + 2, key);
+        if (value !== null) json2sense[key] = value;
+        i += 2 + size;
+    }
+
+    if (i + 1 > b.length) {
+        errors.push("batch truncated in ID count @byte " + i);
+        return done();
+    }
+    const nIds = b[i];
+    i += 1;
+    const fields = [];
+    let recordSize = 0;
+    for (let k = 0; k < nIds; k++) {
+        if (i + 2 > b.length) {
+            errors.push("batch truncated in ID list @byte " + i);
+            return done();
+        }
+        const id = (b[i] << 8) | b[i + 1];
+        const key = batchKey(id);
+        if (!key) {
+            errors.push("unknown ID " + id + " in ID list @byte " + i);
+            return done();
+        }
+        const compact = BATCH_COMPACT_IDS.includes(id);
+        fields.push({ key, compact });
+        recordSize += compact ? 2 : batchSize(key);
+        i += 2;
+    }
+
+    // N rounded up: with a truncated end, the whole records keep the offset they
+    // would have in the full frame (the lost one is the newest).
+    const n = recordSize === 0 ? 0 : Math.ceil((b.length - i) / recordSize);
+    for (let r = 0; r < n && i + recordSize <= b.length; r++) {
+        const reading = { offset_s: 0 - (age + (n - 1 - r) * interval) };
+        for (const field of fields) {
+            if (field.compact) {
+                const v = (b[i] << 8) | b[i + 1];
+                reading[field.key] = v === 0x8000 ? null : (((v << 16) >> 16) / 10).toFixed(4);
+                i += 2;
+            } else {
+                reading[field.key] = batchNative(b, i, field.key);
+                i += batchSize(field.key);
+            }
+        }
+        batch2sense.readings.push(reading);
+    }
+    if (i < b.length) {
+        errors.push("batch with incomplete record: " + (b.length - i) + " trailing byte(s)");
+    }
+    return done();
+}
+
 exports.packetDecode = (rawdata, offset = 0) => {
     var payload = "";
 
@@ -340,6 +501,13 @@ exports.packetDecode = (rawdata, offset = 0) => {
 
     if (offset < 0 || offset > data.length) {
         throw "Wrong offset value";
+    }
+
+    if (obj !== undefined && offset === 0) {
+        const frame = Buffer.from(data, "hex");
+        if (isBatchFrame(obj, frame)) {
+            return decodeBatchFrame(obj, frame);
+        }
     }
 
     let json2sense = {};
