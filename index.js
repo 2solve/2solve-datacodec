@@ -192,6 +192,14 @@ exports.mapping = {
     IntInp3: [190, 4, null, "uint"],
     BatteryLevel: [191, 1, null, "uint"],
     BatteryTxDropMv: [192, 2, null, "uint"],
+    IO_ext_board_DI1_Changes: [193, 1, null, "uint"],
+    IO_ext_board_DI2_Changes: [194, 1, null, "uint"],
+    IO_ext_board_DI3_Changes: [195, 1, null, "uint"],
+    IO_ext_board_DI4_Changes: [196, 1, null, "uint"],
+    IO_ext_board_DI1_Overflow: [197, 2, null, "uint"],
+    IO_ext_board_DI2_Overflow: [198, 2, null, "uint"],
+    IO_ext_board_DI3_Overflow: [199, 2, null, "uint"],
+    IO_ext_board_DI4_Overflow: [200, 2, null, "uint"],
     DI1_DM: [0x8000 + 1, 1, null, "uint"],
     DI2_DM: [0x8000 + 2, 1, null, "uint"],
     DI3_DM: [0x8000 + 3, 1, null, "uint"],
@@ -514,14 +522,22 @@ exports.packetDecode = (rawdata, offset = 0) => {
     let i = offset;
 
     const vetor2sense = [];
+    let errors2sense;
 
     while (i < data.length - 5) {
 
         let id = parseInt(hexToDec(data.substring(i, i + 4))); //id precisa estar entre 0 e 99, a substring ta vindo errada no caso dado
 
         if (id < this.mappingKeys.length || id >= 0x8000) {
-            i += 4;
             let key = this.mappingKeys.find((key) => id === this.mapping[key][0]);
+
+            // Unknown ID: its size is unknown too, so nothing after it can be read. Keep
+            // what was decoded and stop, instead of crashing and losing the uplink (MF-215).
+            if (key === undefined) {
+                errors2sense = ["unknown ID " + id + " @byte " + Math.floor(i / 2)];
+                break;
+            }
+            i += 4;
 
             const variavel = this.mapping[key];
 
@@ -567,6 +583,7 @@ exports.packetDecode = (rawdata, offset = 0) => {
 
 
     var decodedObj = { ...obj, json2sense }
+    if (errors2sense) decodedObj.errors2sense = errors2sense;
 
     return decodedObj;
 };

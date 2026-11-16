@@ -131,6 +131,7 @@ The library includes 180+ predefined sensor mappings across the following catego
 | Vibration         | Peak frequency, RMS and peak acceleration X/Y/Z   |
 | Modbus Registers  | 16-bit and 32-bit, signed/unsigned/float          |
 | Pulse / Relay     | Pulse inputs, per-channel frequency and count (`FreInp0`–`FreInp3`, `IntInp0`–`IntInp3`), relay and drain manager states |
+| NanoDAq NDDI      | `IO_ext_board_DI1_Changes`–`IO_ext_board_DI4_Changes` (state changes since the last uplink), `IO_ext_board_DI1_Overflow`–`IO_ext_board_DI4_Overflow` (pulse total high part: total = overflow × 2^32 + count; only sent after a wrap) |
 | Engineering Units | `EngInp0`–`EngInp3` — device-scaled value per digital input (e.g. flow) |
 
 ---
@@ -165,6 +166,15 @@ packetDecode('xyz');          // Error: invalid hex format
 packetDecode('aabbcc', -1);   // Error: offset must be a non-negative integer
 packetDecode('aabbcc', 100);  // Error: offset out of bounds
 ```
+
+Since v0.23.0, an **unknown ID** inside a valid frame no longer throws. Its size is unknown, so nothing after it can be read: decoding stops there, the fields decoded so far are returned and an `errors2sense` array is added (only when this happens):
+
+```js
+packetDecode('00034066666600fa0001');
+// { json2sense: { BatteryMon: '3.6000' }, errors2sense: ['unknown ID 250 @byte 6'] }
+```
+
+Before v0.23.0 the same frame threw a `TypeError` and the whole uplink was lost.
 
 ---
 
