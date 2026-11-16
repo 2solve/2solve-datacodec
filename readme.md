@@ -49,7 +49,7 @@ packetDecode('000441da6666');
 - `json2sense`: one key per decoded tag, `{ tagName: value }`. Values are **strings**: floats with 4 decimals
   (`'27.3000'`), integers as decimal text (`'75'`), `uintHex` as hex text.
 - for a JSON input, every field of the input message, unchanged (`fPort`, `deviceInfo`, `time`…), next to `json2sense`.
-- `errors2sense` (since v0.23.0): only when the frame has an unknown ID. See [Errors](#errors).
+- `errors2sense` (since v0.23.0): only when the frame has a problem (unknown ID, cut field, repeated ID). See [Errors](#errors).
 - `batch2sense`: only for the NanoDAq batch frame. See [Batch frame](#nanodaq-batch-frame-fport-3).
 
 ```js
@@ -106,7 +106,7 @@ mappingKeys.slice(0, 4); // ['ToSenseID', 'counter', 'epoch', 'BatteryMon']
 
 | Type       | Decoded as |
 |------------|------------|
-| `uint`     | unsigned integer, big-endian, any size (`uint32_t` is the same) |
+| `uint`     | unsigned integer, big-endian, any size (`uint32_t` is the same; decoded since v0.24.0, it used to give `null`) |
 | `int16`    | 16-bit signed integer |
 | `int32`    | 32-bit signed integer |
 | `float`    | IEEE 754 single precision, 4 decimals |
@@ -144,24 +144,35 @@ These inputs **throw a string** (not an `Error` object):
 
 ```js
 packetDecode('xyz');                      // "Data format must be a hexadecimal string"
+packetDecode('000441da666');               // "Data format must be a hexadecimal string with an even number of digits" (v0.24.0+)
 packetDecode('aabbcc', 1.5);              // "Offset format must be a positive integer number"
 packetDecode('aabbcc', -1);               // "Wrong offset value"
 packetDecode('aabbcc', 100);              // "Wrong offset value"
 packetDecode(JSON.stringify({ foo: 1 })); // "Can not find rawdata into received JSON"
 ```
 
-An **unknown ID** inside a valid frame does not throw (since v0.23.0). Its size is unknown, so nothing after it can be
-read: decoding stops there, the values decoded so far are returned and `errors2sense` is added, only in this case:
+A problem **inside** a frame does not throw and does not invent values. The frame does not carry the size of each
+value, so the reading is checked against the table, and `errors2sense` is added (only when something is reported):
+
+| Problem | What happens | Message |
+|---|---|---|
+| ID not in the table | stops; values before it are kept | `unknown ID 250 @byte 6` |
+| value cut at the end | stops; the cut field is **not** returned | `truncated field BatteryMon (ID 3) @byte 0: 3 byte(s) missing` |
+| 1 byte left after the last field | stops | `truncated ID @byte 6` |
+| same ID twice | keeps the **first** value and goes on | `duplicate ID 3 (BatteryMon) @byte 6: kept the first value` |
 
 ```js
 packetDecode('00034066666600fa0001');
 // { json2sense: { BatteryMon: '3.6000' }, errors2sense: ['unknown ID 250 @byte 6'] }
+
+packetDecode('000340');
+// { json2sense: {}, errors2sense: ['truncated field BatteryMon (ID 3) @byte 0: 3 byte(s) missing'] }
 ```
 
-Up to v0.22.0 the same frame threw a `TypeError` and the whole uplink was lost.
-
-Known limitation, kept for compatibility: an ID at or above the number of tags (274) and below `0x8000` is not looked
-up; the decoder moves one hex character forward and tries again.
+History: up to v0.22.0 an unknown ID threw a `TypeError` and the whole uplink was lost (MF-215). Up to v0.23.0 a cut
+value became a plausible number (`000340` gave `BatteryMon: '2.0000'`), 1-2 bytes left at the end were dropped in
+silence, a repeated ID kept the last value, an odd number of hex digits was accepted, and an ID at or above the table
+size made the reader move half a byte and read shifted data (MF-29). Valid frames decode exactly as before.
 
 ---
 
@@ -203,10 +214,11 @@ npm test
 ```
 
 Tests use [Jest](https://jestjs.io/) and live in `__tests__/`: `packetDecode.spec.js`, `smartWaterTags.spec.js`,
-`nddiTags.spec.js`, `batchFrame.spec.js`, `batteryLevelTags.spec.js` and `nddiChangesOverflowTags.spec.js`.
+`nddiTags.spec.js`, `batchFrame.spec.js`, `batteryLevelTags.spec.js`, `nddiChangesOverflowTags.spec.js` and
+`truncatedFrame.spec.js`.
 `batchFrame.spec.js` compares every non-batch frame with v0.20.0 (taken from git history).
 
-Known: 7 tests in `packetDecode.spec.js` fail since before v0.20.0: 5 expect the error texts to be thrown as `Error` objects and 2 expect a result without the `json2sense` wrapper.
+All tests pass since v0.24.0 (7 tests in `packetDecode.spec.js` were wrong since before v0.20.0 and were fixed).
 
 ---
 

@@ -290,6 +290,29 @@ exports.mapping = {
 
 exports.mappingKeys = Object.getOwnPropertyNames(this.mapping);
 
+// ID -> tag name, built once. A frame ID is looked up here, never compared with the
+// size of the table (MF-06/MF-29).
+const idToKey = new Map(exports.mappingKeys.map((key) => [exports.mapping[key][0], key]));
+
+// Value of one field of a plain frame, from its exact hex digits (size already checked).
+function decodeValue(hex, type) {
+    switch (type) {
+        case "float":
+            return readFloatBE([0, 2, 4, 6].map((k) => parseInt(hex.substring(k, k + 2), 16))).toFixed(4);
+        case "uint":
+        case "uint32_t":
+            return hexToDec(hex);
+        case "uintHex":
+            return hex;
+        case "int16":
+            return (hexToDec(hex) << 16) >> 16;
+        case "int32":
+            return (hexToDec(hex) << 32) >> 32;
+        default:
+            return null;
+    }
+}
+
 // ─── NanoDAq batch frame (MF-150) ─────────────────────────────────────────────
 // Sent by the NanoDAq firmware on fPort 3 when the reading period is shorter than
 // the send period (batch_buildFrame in src/lora/batch.h of firmware-NanoDAq).
@@ -338,6 +361,7 @@ function batchNative(b, i, key) {
             const value = readFloatBE([b[i], b[i + 1], b[i + 2], b[i + 3]]);
             return isNaN(value) ? null : value.toFixed(4);
         case "uint":
+        case "uint32_t":
             return hexToDec(hex);
         case "uintHex":
             return hex;
@@ -452,6 +476,10 @@ function decodeBatchFrame(obj, b) {
 exports.packetDecode = (rawdata, offset = 0) => {
     var payload = "";
 
+    if (rawdata === undefined || rawdata === null) {
+        throw "Data format must be a hexadecimal string";
+    }
+
     if (isJson(rawdata.toString().trim())) {
         var obj = JSON.parse(rawdata);
         if (obj.hasOwnProperty('json2sense')) {
@@ -482,7 +510,7 @@ exports.packetDecode = (rawdata, offset = 0) => {
             throw 'Can not find rawdata into received JSON';
         }
 
-        let buff = new Buffer(aux, 'base64');
+        let buff = Buffer.from(aux, 'base64');
 
         for (var j = 0; j < buff.length; j++) {
             if (buff[j] <= 0x0F)
@@ -503,6 +531,11 @@ exports.packetDecode = (rawdata, offset = 0) => {
         throw "Data format must be a hexadecimal string";
     }
 
+    // Half a byte is not a frame: an odd number of hex digits used to be decoded anyway (MF-29).
+    if (data.length % 2 !== 0) {
+        throw "Data format must be a hexadecimal string with an even number of digits";
+    }
+
     if (typeof offset !== "number" || !(offset % 1 === 0)) {
         throw "Offset format must be a positive integer number";
     }
@@ -520,70 +553,46 @@ exports.packetDecode = (rawdata, offset = 0) => {
 
     let json2sense = {};
     let i = offset;
+    const errors2sense = [];
 
-    const vetor2sense = [];
-    let errors2sense;
+    // The frame does not carry the size of each value: it comes from the table. So every
+    // problem below stops the reading, keeps what was decoded and is reported in
+    // errors2sense, instead of inventing a value or losing the uplink (MF-215, MF-29).
+    while (i < data.length) {
+        const at = Math.floor(i / 2);
 
-    while (i < data.length - 5) {
+        if (data.length - i < 4) {
+            errors2sense.push("truncated ID @byte " + at);
+            break;
+        }
+        const id = parseInt(data.substring(i, i + 4), 16);
+        const key = idToKey.get(id);
+        if (key === undefined) {
+            errors2sense.push("unknown ID " + id + " @byte " + at);
+            break;
+        }
 
-        let id = parseInt(hexToDec(data.substring(i, i + 4))); //id precisa estar entre 0 e 99, a substring ta vindo errada no caso dado
+        const variavel = this.mapping[key];
+        const size = variavel[1] * 2;
+        const left = data.length - (i + 4);
+        if (left < size) {
+            errors2sense.push("truncated field " + key + " (ID " + id + ") @byte " + at + ": " +
+                Math.ceil((size - left) / 2) + " byte(s) missing");
+            break;
+        }
+        const raw = data.substring(i + 4, i + 4 + size);
+        i += 4 + size;
 
-        if (id < this.mappingKeys.length || id >= 0x8000) {
-            let key = this.mappingKeys.find((key) => id === this.mapping[key][0]);
-
-            // Unknown ID: its size is unknown too, so nothing after it can be read. Keep
-            // what was decoded and stop, instead of crashing and losing the uplink (MF-215).
-            if (key === undefined) {
-                errors2sense = ["unknown ID " + id + " @byte " + Math.floor(i / 2)];
-                break;
-            }
-            i += 4;
-
-            const variavel = this.mapping[key];
-
-            switch (variavel[3]) {
-                case "float":
-                    variavel[2] = data.substring(i, i + variavel[1] * 2);
-
-                    const teai = [
-                        parseInt(hexToDec(variavel[2].substring(0, 2))),
-                        parseInt(hexToDec(variavel[2].substring(2, 4))),
-                        parseInt(hexToDec(variavel[2].substring(4, 6))),
-                        parseInt(hexToDec(variavel[2].substring(6, 8))),
-                    ];
-
-                    variavel[2] = readFloatBE(teai).toFixed(4);
-
-                    break;
-                case "uint":
-                    variavel[2] = hexToDec(data.substring(i, i + variavel[1] * 2));
-
-                    break;
-                case "uintHex":
-                    variavel[2] = data.substring(i, i + variavel[1] * 2);
-
-                    break;
-                case "int16":
-                    variavel[2] = (hexToDec(data.substring(i, i + variavel[1] * 2)) << 16) >> 16;
-
-                    break;
-                case "int32":
-                    variavel[2] = (hexToDec(data.substring(i, i + variavel[1] * 2)) << 32) >> 32;
-
-                    break;
-                default:
-                    break;
-            }
-
-            i += variavel[1] * 2;
-            vetor2sense.push(variavel);
-            json2sense[key] = variavel[2];
-        } else i++;
+        if (json2sense.hasOwnProperty(key)) {
+            errors2sense.push("duplicate ID " + id + " (" + key + ") @byte " + at + ": kept the first value");
+            continue;
+        }
+        variavel[2] = decodeValue(raw, variavel[3]);
+        json2sense[key] = variavel[2];
     }
 
-
     var decodedObj = { ...obj, json2sense }
-    if (errors2sense) decodedObj.errors2sense = errors2sense;
+    if (errors2sense.length) decodedObj.errors2sense = errors2sense;
 
     return decodedObj;
 };
